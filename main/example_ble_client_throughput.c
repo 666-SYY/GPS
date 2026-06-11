@@ -175,6 +175,7 @@ void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble
 #define BUF_SIZE              (1024)
 
 static void gps_uart_init(void) {
+    ESP_LOGI(GATTS_TAG, "Initializing GPS UART%d: Baudrate:%d, TX:%d, RX:%d", GPS_UART_NUM, GPS_BAUD_RATE, GPS_TXD_PIN, GPS_RXD_PIN);
     const uart_config_t uart_config = {
         .baud_rate = GPS_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -236,26 +237,34 @@ static void parse_rmc(char* line, gps_data_t* gps_data) {
 static void gps_task(void *pvParameters) {
     uint8_t* data = (uint8_t*) malloc(BUF_SIZE);
     gps_data_t gps_info;
+    ESP_LOGI(GATTS_TAG, "GPS task started, waiting for data...");
     while (1) {
         int len = uart_read_bytes(GPS_UART_NUM, data, BUF_SIZE - 1, 100 / portTICK_PERIOD_MS);
         if (len > 0) {
             data[len] = 0;
+            // ESP_LOGD(GATTS_TAG, "Raw GPS data: %s", (char*)data); // Debug level for raw data
             char* line = strtok((char*)data, "\n");
             while (line != NULL) {
                 if (strstr(line, "$GPRMC") || strstr(line, "$GNRMC")) {
+                    ESP_LOGI(GATTS_TAG, "Received RMC sentence: %s", line);
                     parse_rmc(line, &gps_info);
                     if (gps_info.status == 'A') {
-                        ESP_LOGI(GATTS_TAG, "GPS: Lat: %.6f, Lon: %.6f", gps_info.latitude, gps_info.longitude);
+                        ESP_LOGI(GATTS_TAG, "GPS Fixed! Lat: %.6f, Lon: %.6f", gps_info.latitude, gps_info.longitude);
                         
                         // Send to BLE
                         if (gl_profile_tab[PROFILE_A_APP_ID].conn_id != 0xffff) {
                             char ble_data[64];
                             snprintf(ble_data, sizeof(ble_data), "LAT:%.6f,LON:%.6f", gps_info.latitude, gps_info.longitude);
+                            ESP_LOGI(GATTS_TAG, "Sending GPS data to BLE: %s", ble_data);
                             esp_ble_gatts_send_indicate(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, 
                                                        gl_profile_tab[PROFILE_A_APP_ID].conn_id,
                                                        gl_profile_tab[PROFILE_A_APP_ID].char_handle,
                                                        strlen(ble_data), (uint8_t*)ble_data, false);
+                        } else {
+                            ESP_LOGW(GATTS_TAG, "GPS Fixed but BLE not connected, data not sent");
                         }
+                    } else {
+                        ESP_LOGW(GATTS_TAG, "GPS data received but no valid fix (Status: %c)", gps_info.status);
                     }
                 }
                 line = strtok(NULL, "\n");
