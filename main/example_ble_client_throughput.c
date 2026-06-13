@@ -21,10 +21,11 @@
 #include "nvs_flash.h"
 
 #include "esp_bt.h"
+#include "esp_bt_main.h"
+#include "esp_bt_device.h"
 #include "esp_gap_ble_api.h"
 #include "esp_gattc_api.h"
 #include "esp_gatt_defs.h"
-#include "esp_bt_main.h"
 #include "esp_gatt_common_api.h"
 #include "esp_gatts_api.h"
 #include "esp_log.h"
@@ -243,7 +244,8 @@ static void gps_task(void *pvParameters) {
         if (len > 0) {
             data[len] = 0;
             // ESP_LOGD(GATTS_TAG, "Raw GPS data: %s", (char*)data); // Debug level for raw data
-            char* line = strtok((char*)data, "\n");
+            char* saveptr;
+            char* line = strtok_r((char*)data, "\n", &saveptr);
             while (line != NULL) {
                 if (strstr(line, "$GPRMC") || strstr(line, "$GNRMC")) {
                     ESP_LOGI(GATTS_TAG, "Received RMC sentence: %s", line);
@@ -267,7 +269,7 @@ static void gps_task(void *pvParameters) {
                         ESP_LOGW(GATTS_TAG, "GPS data received but no valid fix (Status: %c)", gps_info.status);
                     }
                 }
-                line = strtok(NULL, "\n");
+                line = strtok_r(NULL, "\n", &saveptr);
             }
         }
     }
